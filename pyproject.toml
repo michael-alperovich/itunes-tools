@@ -2,4 +2,22 @@
 name = "itunes-tools"
 version = "0.1.0"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "pydantic>=2.13.5",
+    "pywin32>=312",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The project has no build backend yet, so make ``src/`` importable for tests.
+pythonpath = ["src"]
+# importlib mode lets test files share a basename across folders without __init__.py files.
+addopts = ["--import-mode=importlib", "--strict-markers", "-m", "not itunes"]
+markers = [
+    "itunes: integration test that talks to a real iTunes instance (run with: pytest -m itunes)",
+]
