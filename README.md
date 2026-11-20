@@ -20,7 +20,8 @@ Custom metadata conventions will be documented here as they are introduced.
 
 - **Unique playlist names.** No two playlists, including folders and smart playlists, may share a
   name. Names are compared exactly, so `Rock` and `rock` are different names.
-  Violations raise `DuplicatePlaylistNameError`, which lists the names to rename.
+  Violations raise `DuplicatePlaylistNameError`, which lists the names to rename. The sorter keeps
+  the rule when committing: a new playlist's name must not be taken (`PlaylistNameTakenError`).
 - **Don't edit a playlist while sorting it.** The sorter reads a playlist's songs and their metadata
   from iTunes once, when the playlist is opened, and works from that copy (saved in its YAML file)
   without iTunes. Changes made in iTunes meanwhile are not seen until the playlist is refreshed in
@@ -74,7 +75,16 @@ previous / play-pause / next buttons with a volume slider. A speaker icon marks 
 When a song ends, the next song in the current sorting order plays and the list scrolls to it; songs
 iTunes has no file for are skipped with a message. Each row has two quick play buttons: *Play from the
 beginning* and *Play the last 10 seconds* (which then continues into the next song, to hear the
-transition). The other toolbar buttons and *Send to a group* are placeholders for now.
+transition). *Add group* and *Send to a group* are placeholders for now.
+
+**Open** loads a saved sorter file, without iTunes. **Save** writes the songs in their current order
+back to the sorter file the playlist was opened from or last saved to (it asks for a location only if
+there is none yet).
+
+**Commit to iTunes** asks for the name of a new playlist, saves the sorter file, then creates the
+playlist in iTunes with the songs in the current sorting order. The original playlist is left as it
+is. The name must not be used by any existing playlist; a taken name is rejected and nothing is
+created.
 
 ### Development
 

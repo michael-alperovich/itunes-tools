@@ -68,3 +68,48 @@ def test_worker_rejects_a_playlist_that_was_not_listed(tmp_path):
     worker.importPlaylist("Unknown")
 
     assert len(failures) == 1
+
+
+def test_worker_commits_a_playlist_in_the_given_order(tmp_path, fake_itunes, make_com_track):
+    fake_itunes.set_library_tracks(make_com_track(0, 1, name="First"), make_com_track(0, 2, name="Second"))
+    worker = ItunesWorker(ArtworkCache(tmp_path))
+    committed = []
+    worker.playlistCommitted.connect(committed.append)
+
+    worker.commitPlaylist("Sorted", [ItunesPersistentID(high=0, low=2), ItunesPersistentID(high=0, low=1)])
+
+    [playlist] = committed
+    assert playlist.name == "Sorted"
+    assert [song.name for song in playlist.tracks] == ["Second", "First"]
+
+
+def test_worker_rejects_committing_under_a_taken_name(tmp_path, fake_itunes, make_com_track, make_com_playlist):
+    fake_itunes.set_library_tracks(make_com_track(0, 1))
+    fake_itunes.set_playlists(make_com_playlist(0, 9, "Taken"))
+    worker = ItunesWorker(ArtworkCache(tmp_path))
+    committed = []
+    failures = []
+    worker.playlistCommitted.connect(committed.append)
+    worker.failed.connect(failures.append)
+
+    worker.commitPlaylist("Taken", [ItunesPersistentID(high=0, low=1)])
+
+    [message] = failures
+    assert "'Taken' already exists" in message
+    assert committed == []
+    assert fake_itunes.LibrarySource.Playlists.Count == 1
+
+
+def test_worker_reports_unexpected_commit_errors_as_failed(tmp_path, fake_itunes, monkeypatch):
+    def broken_create_playlist(self, name, track_ids):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(ItunesClient, "create_playlist", broken_create_playlist)
+    worker = ItunesWorker(ArtworkCache(tmp_path))
+    failures = []
+    worker.failed.connect(failures.append)
+
+    worker.commitPlaylist("Sorted", [])
+
+    [message] = failures
+    assert "Unexpected error while creating 'Sorted'" in message

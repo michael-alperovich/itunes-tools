@@ -32,8 +32,8 @@ def capture_playlist(client: ItunesClient, playlist_id: ItunesPersistentID, artw
 class ItunesWorker(QObject):
     """Runs iTunes jobs in the thread it was moved to.
 
-    Every job ends with exactly one result signal (``playlistsListed`` or ``playlistImported``) or
-    ``failed``, so the window knows when it may start the next job.
+    Every job ends with exactly one result signal (``playlistsListed``, ``playlistImported`` or
+    ``playlistCommitted``) or ``failed``, so the window knows when it may start the next job.
 
     The ``ItunesClient`` is created on the first job, inside the worker thread, because a client is
     bound to the thread that first uses it.
@@ -41,6 +41,7 @@ class ItunesWorker(QObject):
 
     playlistsListed = Signal(list)  # list[str], playlist names sorted for display
     playlistImported = Signal(object)  # Playlist
+    playlistCommitted = Signal(object)  # Playlist, the new playlist read back from iTunes
     progress = Signal(str)  # a message for the user
     failed = Signal(str)  # a message for the user
 
@@ -84,6 +85,25 @@ class ItunesWorker(QObject):
             self.failed.emit(f"Unexpected error while importing {playlist_name!r}; see the log for details.")
             return
         self.playlistImported.emit(playlist)
+
+    @Slot(str, list)
+    def commitPlaylist(self, playlist_name: str, track_ids: list[ItunesPersistentID]) -> None:
+        """Create a new iTunes playlist with the tracks in the given order and emit it, or ``failed``.
+
+        A name already used by another playlist is rejected by ``ItunesClient.create_playlist`` before
+        anything is created.
+        """
+        self.progress.emit(f"Creating the playlist {playlist_name!r} in iTunes…")
+        try:
+            playlist = self._get_client().create_playlist(playlist_name, track_ids)
+        except ItunesClientError as error:
+            self.failed.emit(str(error))
+            return
+        except Exception:
+            logger.exception("Unexpected error while creating playlist %r", playlist_name)
+            self.failed.emit(f"Unexpected error while creating {playlist_name!r}; see the log for details.")
+            return
+        self.playlistCommitted.emit(playlist)
 
     def _get_client(self) -> ItunesClient:
         if self._client is None:
