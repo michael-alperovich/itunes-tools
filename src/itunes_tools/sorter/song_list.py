@@ -1,8 +1,8 @@
 """The song list: a Qt model holding the songs in sorting order, and a delegate that paints each row.
 
-Each row shows the album artwork, the title, ``artist – album``, and the per-song action buttons.
-The buttons are only painted for now (disabled); clicking them is handled once UC-6 (quick play) and
-UC-7 (groups) are implemented, through ``SongRowDelegate.button_rects`` and ``editorEvent``.
+Each row shows a speaker icon when the song is playing, the album artwork, the title,
+``artist – album``, and the per-song action buttons. Clicking an enabled button emits
+``SongRowDelegate.rowActionTriggered``; *Send to a group* stays disabled until UC-7 (groups).
 
 Model/view is used instead of one widget per row (``QListWidget.setItemWidget``) because it scales to
 large playlists and supports drag and drop (UC-8) and groups (UC-7).
@@ -10,8 +10,19 @@ large playlists and supports drag and drop (UC-8) and groups (UC-7).
 
 from typing import Any, NamedTuple
 
-from PySide6.QtCore import QAbstractListModel, QModelIndex, QPersistentModelIndex, QRect, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QHelpEvent, QIcon, QPainter, QPalette, QPixmap
+from PySide6.QtCore import (
+    QAbstractItemModel,
+    QAbstractListModel,
+    QEvent,
+    QModelIndex,
+    QPersistentModelIndex,
+    QPoint,
+    QRect,
+    QSize,
+    Qt,
+    Signal,
+)
+from PySide6.QtGui import QFont, QFontMetrics, QHelpEvent, QIcon, QMouseEvent, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -23,7 +34,10 @@ from PySide6.QtWidgets import (
 
 from itunes_tools.common.artwork_cache import ArtworkCache
 from itunes_tools.common.models import ItunesPersistentID, Song
+from itunes_tools.common.widgets.artwork import load_artwork_pixmap
+from itunes_tools.common.widgets.icons import text_colored_icon
 
+SPEAKER_SIZE = 16
 ARTWORK_SIZE = 48
 ROW_PADDING = 4
 BUTTON_SIZE = 24
@@ -34,6 +48,7 @@ ROW_HEIGHT = ARTWORK_SIZE + 2 * ROW_PADDING
 ArtistRole = Qt.ItemDataRole.UserRole + 1
 AlbumRole = Qt.ItemDataRole.UserRole + 2
 SongRole = Qt.ItemDataRole.UserRole + 3
+IsPlayingRole = Qt.ItemDataRole.UserRole + 4
 
 ModelIndex = QModelIndex | QPersistentModelIndex
 
@@ -44,12 +59,17 @@ class RowAction(NamedTuple):
     name: str
     tooltip: str
     icon: QStyle.StandardPixmap
+    enabled: bool
 
+
+PLAY_FROM_START = "play_from_start"
+PLAY_LAST_SECONDS = "play_last_seconds"
+SEND_TO_GROUP = "send_to_group"
 
 ROW_ACTIONS = (
-    RowAction("play_from_start", "Play from the beginning", QStyle.StandardPixmap.SP_MediaPlay),
-    RowAction("play_last_seconds", "Play the last 10 seconds", QStyle.StandardPixmap.SP_MediaSeekForward),
-    RowAction("send_to_group", "Send to a group", QStyle.StandardPixmap.SP_ArrowRight),
+    RowAction(PLAY_FROM_START, "Play from the beginning", QStyle.StandardPixmap.SP_MediaPlay, True),
+    RowAction(PLAY_LAST_SECONDS, "Play the last 10 seconds", QStyle.StandardPixmap.SP_MediaSeekForward, True),
+    RowAction(SEND_TO_GROUP, "Send to a group (coming soon)", QStyle.StandardPixmap.SP_ArrowRight, False),
 )
 
 
@@ -65,6 +85,7 @@ class SongListModel(QAbstractListModel):
         self._artwork_cache = artwork_cache
         self._songs: list[Song] = []
         self._artwork_pixmaps: dict[ItunesPersistentID, QPixmap] = {}
+        self._playing_song_id: ItunesPersistentID | None = None
 
     def set_songs(self, songs: list[Song]) -> None:
         """Replace all songs. Views are told to reload everything."""
@@ -72,6 +93,24 @@ class SongListModel(QAbstractListModel):
         self._songs = list(songs)
         self._artwork_pixmaps.clear()
         self.endResetModel()
+
+    def set_playing_song(self, song_id: ItunesPersistentID | None) -> None:
+        """Mark the song shown as playing (``IsPlayingRole``), or none. Only the affected rows repaint."""
+        old_row = self.playing_row()
+        self._playing_song_id = song_id
+        new_row = self.playing_row()
+        for row in {old_row, new_row} - {None}:
+            index = self.index(row)
+            self.dataChanged.emit(index, index, [IsPlayingRole])
+
+    def playing_row(self) -> int | None:
+        """Return the row of the song marked as playing, or ``None`` if there is none in the list."""
+        if self._playing_song_id is None:
+            return None
+        for row, song in enumerate(self._songs):
+            if song.id == self._playing_song_id:
+                return row
+        return None
 
     def songs(self) -> list[Song]:
         """Return the songs in sorting order (a copy)."""
@@ -97,30 +136,29 @@ class SongListModel(QAbstractListModel):
             return song.album
         if role == SongRole:
             return song
+        if role == IsPlayingRole:
+            return song.id == self._playing_song_id
         return None
 
     def _artwork_pixmap(self, song: Song) -> QPixmap:
         """Return the song's artwork scaled for a row, or an empty placeholder when there is none."""
         pixmap = self._artwork_pixmaps.get(song.id)
         if pixmap is None:
-            path = self._artwork_cache.get_path(song)
-            pixmap = QPixmap(str(path)) if path is not None else QPixmap()
-            if pixmap.isNull():  # no artwork, not cached yet, or an unreadable file
-                pixmap = QPixmap(ARTWORK_SIZE, ARTWORK_SIZE)
-                pixmap.fill(QColor("lightgray"))
-            else:
-                pixmap = pixmap.scaled(
-                    ARTWORK_SIZE,
-                    ARTWORK_SIZE,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
+            pixmap = load_artwork_pixmap(self._artwork_cache, song, ARTWORK_SIZE)
             self._artwork_pixmaps[song.id] = pixmap
         return pixmap
 
 
 class SongRowDelegate(QStyledItemDelegate):
-    """Paints a song row: artwork, title, ``artist – album`` and the row action buttons."""
+    """Paints a song row: playing speaker, artwork, title, ``artist – album`` and the row action buttons."""
+
+    rowActionTriggered = Signal(str, QModelIndex)
+    """An enabled row button was clicked: the ``RowAction`` name and the row's index."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Recolouring icons is too slow to repeat for every painted row, so keep them.
+        self._icons: dict[QStyle.StandardPixmap, QIcon] = {}
 
     def sizeHint(self, option: QStyleOptionViewItem, index: ModelIndex) -> QSize:
         # Width 0: the list view stretches each row to its own width, so no horizontal scrolling is needed.
@@ -134,7 +172,13 @@ class SongRowDelegate(QStyledItemDelegate):
         style.drawPrimitive(QStyle.PrimitiveElement.PE_PanelItemViewItem, option, painter, option.widget)
 
         content = option.rect.adjusted(ROW_PADDING, ROW_PADDING, -ROW_PADDING, -ROW_PADDING)
-        artwork_rect = QRect(content.left(), content.top(), ARTWORK_SIZE, ARTWORK_SIZE)
+        # The speaker column is always reserved, so the artwork does not move when a song starts playing.
+        speaker_rect = QRect(content.left(), content.top(), SPEAKER_SIZE, content.height())
+        if index.data(IsPlayingRole):
+            speaker = self._icon(style, option.palette, QStyle.StandardPixmap.SP_MediaVolume)
+            speaker.paint(painter, speaker_rect, Qt.AlignmentFlag.AlignCenter)
+
+        artwork_rect = QRect(speaker_rect.right() + 1 + ROW_PADDING, content.top(), ARTWORK_SIZE, ARTWORK_SIZE)
         artwork: QPixmap = index.data(Qt.ItemDataRole.DecorationRole)
         # Center artwork that is not square inside the square slot.
         artwork_target = QRect(0, 0, artwork.width(), artwork.height())
@@ -143,9 +187,9 @@ class SongRowDelegate(QStyledItemDelegate):
 
         button_rects = self.button_rects(option.rect)
         for action, button_rect in zip(ROW_ACTIONS, button_rects):
-            # Disabled until the actions are implemented (UC-6, UC-7).
-            icon = style.standardIcon(action.icon)
-            icon.paint(painter, button_rect, Qt.AlignmentFlag.AlignCenter, QIcon.Mode.Disabled)
+            mode = QIcon.Mode.Normal if action.enabled else QIcon.Mode.Disabled
+            icon = self._icon(style, option.palette, action.icon)
+            icon.paint(painter, button_rect, Qt.AlignmentFlag.AlignCenter, mode)
 
         text_left = artwork_rect.right() + 1 + 2 * ROW_PADDING
         text_right = button_rects[0].left() - 2 * ROW_PADDING
@@ -153,6 +197,14 @@ class SongRowDelegate(QStyledItemDelegate):
         self._paint_text(painter, option, index, text_rect)
 
         painter.restore()
+
+    def _icon(self, style: QStyle, palette: QPalette, standard_pixmap: QStyle.StandardPixmap) -> QIcon:
+        """Return a standard icon in the text colour (white on a dark background), created once."""
+        icon = self._icons.get(standard_pixmap)
+        if icon is None:
+            icon = text_colored_icon(style, palette, standard_pixmap)
+            self._icons[standard_pixmap] = icon
+        return icon
 
     def button_rects(self, row_rect: QRect) -> list[QRect]:
         """Return the rectangle of each ``ROW_ACTIONS`` button, right-aligned and vertically centered."""
@@ -163,6 +215,33 @@ class SongRowDelegate(QStyledItemDelegate):
             for i in range(len(ROW_ACTIONS))
         ]
 
+    def button_at(self, row_rect: QRect, position: QPoint) -> RowAction | None:
+        """Return the row action whose button contains ``position``, or ``None``."""
+        for action, button_rect in zip(ROW_ACTIONS, self.button_rects(row_rect)):
+            if button_rect.contains(position):
+                return action
+        return None
+
+    def editorEvent(
+        self,
+        event: QEvent,
+        model: QAbstractItemModel,
+        option: QStyleOptionViewItem,
+        index: ModelIndex,
+    ) -> bool:
+        """Trigger a row action when its enabled button is clicked with the left mouse button.
+
+        Presses on an enabled button are consumed too, so clicking a button does not select the row.
+        """
+        click_types = (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease, QEvent.Type.MouseButtonDblClick)
+        if event.type() in click_types and isinstance(event, QMouseEvent):
+            action = self.button_at(option.rect, event.position().toPoint())
+            if action is not None and action.enabled and event.button() == Qt.MouseButton.LeftButton:
+                if event.type() == QEvent.Type.MouseButtonRelease:
+                    self.rowActionTriggered.emit(action.name, model.index(index.row(), index.column()))
+                return True
+        return super().editorEvent(event, model, option, index)
+
     def helpEvent(
         self,
         event: QHelpEvent,
@@ -172,10 +251,10 @@ class SongRowDelegate(QStyledItemDelegate):
     ) -> bool:
         """Show the button's tooltip when hovering a row action button."""
         if event.type() == QHelpEvent.Type.ToolTip:
-            for action, button_rect in zip(ROW_ACTIONS, self.button_rects(option.rect)):
-                if button_rect.contains(event.pos()):
-                    QToolTip.showText(event.globalPos(), f"{action.tooltip} (coming soon)", view)
-                    return True
+            action = self.button_at(option.rect, event.pos())
+            if action is not None:
+                QToolTip.showText(event.globalPos(), action.tooltip, view)
+                return True
         return super().helpEvent(event, view, option, index)
 
     @staticmethod

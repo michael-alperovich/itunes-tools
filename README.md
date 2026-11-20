@@ -66,8 +66,15 @@ uv run --directory src python -m itunes_tools.sorter
 **Import from iTunes** lists the iTunes playlists, reads the chosen one with all its song metadata and
 artwork, and shows its songs. A save dialog then asks where to store the playlist's *sorter file*,
 suggesting `SORTER_FOLDER\<playlist name>.yaml`. The sorter file is a YAML dump of the whole playlist
-(every song's metadata, in sorting order), so a saved session needs no iTunes to reopen. The other
-toolbar buttons, the player and the per-song buttons are placeholders for now.
+(every song's metadata, in sorting order), so a saved session needs no iTunes to reopen.
+
+The **player** above the list plays the songs' audio files directly (Qt Multimedia), without iTunes. It
+shows the song's artwork, title, artist and album, a seek bar with elapsed and remaining time, and
+previous / play-pause / next buttons with a volume slider. A speaker icon marks the playing song's row.
+When a song ends, the next song in the current sorting order plays and the list scrolls to it; songs
+iTunes has no file for are skipped with a message. Each row has two quick play buttons: *Play from the
+beginning* and *Play the last 10 seconds* (which then continues into the next song, to hear the
+transition). The other toolbar buttons and *Send to a group* are placeholders for now.
 
 ### Development
 

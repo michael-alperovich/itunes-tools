@@ -20,6 +20,9 @@ from unittest.mock import MagicMock
 
 import pytest
 import win32com.client
+from PySide6.QtWidgets import QApplication
+
+from itunes_tools.common.models import ItunesPersistentID, Song
 
 
 class FakeComCollection:
@@ -205,3 +208,44 @@ def com_cast_to(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 def fake_itunes(com_dispatch: MagicMock, com_cast_to: MagicMock) -> FakeItunesApp:
     """Return the fake application that ``ItunesClient`` will receive from ``Dispatch``."""
     return com_dispatch.return_value
+
+
+@pytest.fixture(scope="session")
+def qt_application() -> Iterator[QApplication]:
+    """A ``QApplication``, needed before creating pixmaps or widgets. One per process, so share it.
+
+    Use it in a test module with ``pytestmark = pytest.mark.usefixtures("qt_application")``.
+    """
+    yield QApplication.instance() or QApplication([])
+
+
+@pytest.fixture
+def make_song() -> Callable[..., Song]:
+    """Return a factory for ``Song`` models with sensible defaults and no audio file."""
+
+    def factory(
+        low: int,
+        name: str = "Song",
+        artist: str = "Artist",
+        album: str = "Album",
+        duration: int = 180,
+        location: Path | None = None,
+    ) -> Song:
+        return Song(
+            id=ItunesPersistentID(high=0, low=low),
+            name=name,
+            artist=artist,
+            album=album,
+            album_artist="",
+            genre="",
+            year=0,
+            track_number=0,
+            disc_number=0,
+            duration=duration,
+            date_added=FAKE_MODIFICATION_DATE,
+            modification_date=FAKE_MODIFICATION_DATE,
+            location=location,
+            artwork_count=0,
+        )
+
+    return factory
