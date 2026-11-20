@@ -8,8 +8,9 @@ iTunes work (listing, importing, committing) runs in ``ItunesWorker`` on its own
 time; opening and saving sorter files is local and needs no iTunes.
 
 The song list is a tree: top-level songs and groups of songs. Playback follows the sorting order, read
-top to bottom with group contents in place: when a song ends, the next song plays and the list scrolls
-to it, expanding its group if collapsed. The shared ``PlayerWidget`` only plays songs; this window
+top to bottom with group contents in place: when a song ends, the next song plays and the list stays
+where it is. The player's *Next* and *Previous* buttons also scroll the list to the new song, expanding
+its group if collapsed. The shared ``PlayerWidget`` only plays songs; this window
 decides which one comes next.
 """
 
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QInputDialog,
     QMainWindow,
+    QMessageBox,
     QPlainTextEdit,
     QStyle,
     QToolBar,
@@ -85,6 +87,9 @@ class MainWindow(QMainWindow):
         # file it was opened from or saved to. Both are None until a playlist is imported or opened.
         self._playlist: Playlist | None = None
         self._sorter_file_path: Path | None = None
+        # The sorting state as last saved or opened, to tell whether there is unsaved work. None when the
+        # loaded playlist was never saved (just imported), or when nothing is loaded.
+        self._saved_sorter_file: SorterFile | None = None
         # True while the worker runs a job; the worker handles one job at a time.
         self._itunes_busy = False
 
@@ -199,11 +204,14 @@ class MainWindow(QMainWindow):
         self._worker_thread.start()
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        """Stop the worker thread before the window goes away.
+        """Offer to save unsaved work, then stop the worker thread before the window goes away.
 
         ``quit`` ends the thread's event loop once the current job (if any) has finished, so closing
         during an import waits for it.
         """
+        if not self._confirm_unsaved_work():
+            event.ignore()  # the window stays open
+            return
         self._player.stop()
         self._worker_thread.quit()
         self._worker_thread.wait()
@@ -239,6 +247,7 @@ class MainWindow(QMainWindow):
         self._player.stop()  # the playing song may not be in the new playlist
         self._playlist = playlist
         self._sorter_file_path = sorter_file_path
+        self._saved_sorter_file = None  # set by the caller once the playlist is known to be saved
         self._song_model.set_items(items)
         # Groups open by default. expandAll skips empty groups, so expand every top-level row instead.
         for row in range(self._song_model.rowCount()):
@@ -306,6 +315,8 @@ class MainWindow(QMainWindow):
 
         playlist = sorter_file.playlist
         self._show_playlist(playlist, items_from_sorter_file(sorter_file), path)
+        # Taken from the list rather than the file, so a file of an older format version counts as saved.
+        self._saved_sorter_file = self._current_sorter_file()
         self._show_message(
             f"Opened {path} ({playlist.name!r}, {len(playlist.tracks)} songs, {len(sorter_file.groups)} groups)."
         )
@@ -328,14 +339,43 @@ class MainWindow(QMainWindow):
                 self._show_message("Sorter file not saved.")
                 return False
 
+        sorter_file = self._current_sorter_file()
         try:
-            save_sorter_file(self._current_sorter_file(), path)
+            save_sorter_file(sorter_file, path)
         except OSError as error:
             self._show_message(f"Error: could not save {path}: {error}")
             return False
         self._sorter_file_path = path
+        self._saved_sorter_file = sorter_file
         self._show_message(f"Saved {path}")
         return True
+
+    def _has_unsaved_work(self) -> bool:
+        """Return whether the list differs from the sorter file as last saved or opened.
+
+        The whole sorting state is compared, so a change undone by hand (moving a song back) counts as saved.
+        """
+        if self._playlist is None:
+            return False
+        return self._current_sorter_file() != self._saved_sorter_file
+
+    def _confirm_unsaved_work(self) -> bool:
+        """Ask whether to save unsaved work before it is lost: save, discard, or cancel.
+
+        :return: Whether to go on; ``False`` when the user cancelled or saving failed or was cancelled.
+        """
+        if not self._has_unsaved_work():
+            return True
+        answer = QMessageBox.warning(
+            self,
+            "Unsaved changes",
+            "The sorting has changes that are not saved. Save them first?",
+            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save,
+        )
+        if answer == QMessageBox.StandardButton.Save:
+            return self._save(ask_path=self._sorter_file_path is None)
+        return answer == QMessageBox.StandardButton.Discard
 
     def _ask_sorter_file_path(self, playlist_name: str) -> Path | None:
         """Ask where to save a playlist's sorter file, suggesting one in the sorter folder.
@@ -385,8 +425,8 @@ class MainWindow(QMainWindow):
     def _connect_player(self) -> None:
         self._song_view.row_delegate.rowActionTriggered.connect(self._on_row_action_triggered)
         self._player.currentSongChanged.connect(self._on_current_song_changed)
-        self._player.songFinished.connect(self._play_next_song)
-        self._player.nextRequested.connect(self._play_next_song)
+        self._player.songFinished.connect(self._on_song_finished)
+        self._player.nextRequested.connect(self._on_next_requested)
         self._player.previousRequested.connect(self._on_previous_requested)
         self._player.playbackFailed.connect(self._on_playback_failed)
 
@@ -410,8 +450,19 @@ class MainWindow(QMainWindow):
         self._song_model.set_playing_song(song.id if song is not None else None)
 
     @Slot()
-    def _play_next_song(self) -> None:
-        """Play the next playable song after the playing one in sorting order; stop after the last."""
+    def _on_song_finished(self) -> None:
+        # Advancing on its own, playback leaves the list where the user put it.
+        self._play_next_song(scroll=False)
+
+    @Slot()
+    def _on_next_requested(self) -> None:
+        self._play_next_song(scroll=True)
+
+    def _play_next_song(self, scroll: bool) -> None:
+        """Play the next playable song after the playing one in sorting order; stop after the last.
+
+        :param scroll: Scroll the list to the new song; done only when the user asked for the next song.
+        """
         playing_position = self._song_model.playing_position()
         after_position = playing_position if playing_position is not None else -1
         songs = self._song_model.songs()
@@ -423,7 +474,7 @@ class MainWindow(QMainWindow):
             self._player.stop()
             self._show_message("Reached the end of the playlist.")
             return
-        self._play_position(next_position)
+        self._play_position(next_position, scroll)
 
     @Slot(object)
     def _on_previous_requested(self, song: Song) -> None:
@@ -437,21 +488,23 @@ class MainWindow(QMainWindow):
         if previous_position is None:
             self._player.play(song)
             return
-        self._play_position(previous_position)
+        self._play_position(previous_position, scroll=True)
 
     @Slot(str)
     def _on_playback_failed(self, message: str) -> None:
         self._show_message(f"Error: {message}")
-        self._play_next_song()
+        self._play_next_song(scroll=False)
 
-    def _play_position(self, position: int) -> None:
-        """Play the song at flat ``position`` in sorting order and scroll the list to show it in the middle.
+    def _play_position(self, position: int, scroll: bool) -> None:
+        """Play the song at flat ``position`` in sorting order.
 
-        ``QTreeView.scrollTo`` also expands the song's group when it is collapsed.
+        :param scroll: Also scroll the list to show the song in the middle. ``QTreeView.scrollTo`` expands
+            the song's group when it is collapsed.
         """
         index = self._song_model.index_at_position(position)
         self._player.play(index.data(SongRole))
-        self._song_view.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtCenter)
+        if scroll:
+            self._song_view.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtCenter)
 
     # --- Groups -------------------------------------------------------------------------------------
 

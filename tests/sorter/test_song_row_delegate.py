@@ -10,6 +10,7 @@ from itunes_tools.sorter.song_row_delegate import (
     DELETE_GROUP,
     GROUP_ACTIONS,
     GROUP_ROW_HEIGHT,
+    GROUP_SONG_INDENT,
     MOVE_TO_GROUP,
     PLAY_LAST_SECONDS,
     ROW_HEIGHT,
@@ -50,6 +51,13 @@ def test_songs_get_song_buttons_and_groups_get_group_buttons(model):
     assert row_actions(model.index(0, 0, group)) == SONG_ACTIONS
     assert row_actions(group) == GROUP_ACTIONS
     assert MOVE_TO_GROUP in {action.name for action in SONG_ACTIONS}
+
+
+def test_only_songs_inside_a_group_are_indented(model):
+    group = model.index(1, 0)
+
+    assert SongRowDelegate.song_indent(model.index(0, 0)) == 0
+    assert SongRowDelegate.song_indent(model.index(0, 0, group)) == GROUP_SONG_INDENT > 0
 
 
 def test_group_rows_are_lower_than_song_rows(model):

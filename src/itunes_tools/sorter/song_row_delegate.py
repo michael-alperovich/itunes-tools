@@ -6,8 +6,9 @@ expand/collapse arrow, the group's name and song count, and its buttons (rename,
 button or the arrow emits ``SongRowDelegate.rowActionTriggered``.
 
 The view draws no indentation or branch arrows of its own (``QTreeView.setIndentation(0)``), so every
-row spans the full width: songs inside and outside groups line up, and the selection highlights the
-whole row. That is why group rows paint their own arrow.
+row spans the full width and the selection highlights the whole row. That is why group rows paint their
+own arrow, and why the delegate indents the content of songs inside a group (``GROUP_SONG_INDENT``): it
+marks where the last group ends and the songs outside groups begin, while the buttons stay lined up.
 """
 
 from typing import NamedTuple
@@ -41,6 +42,8 @@ BUTTON_SIZE = 24
 BUTTON_SPACING = 4
 ROW_HEIGHT = ARTWORK_SIZE + 2 * ROW_PADDING
 GROUP_ROW_HEIGHT = BUTTON_SIZE + 2 * ROW_PADDING
+# Songs inside a group start where the group's name starts, right of its arrow.
+GROUP_SONG_INDENT = ARROW_SIZE + ROW_PADDING
 
 
 class RowAction(NamedTuple):
@@ -137,7 +140,8 @@ class SongRowDelegate(QStyledItemDelegate):
                 speaker = self._icon(style, option.palette, QStyle.StandardPixmap.SP_MediaVolume)
                 speaker.paint(painter, speaker_rect, Qt.AlignmentFlag.AlignCenter)
 
-            artwork_rect = QRect(content.left(), content.top(), ARTWORK_SIZE, ARTWORK_SIZE)
+            artwork_left = content.left() + self.song_indent(index)
+            artwork_rect = QRect(artwork_left, content.top(), ARTWORK_SIZE, ARTWORK_SIZE)
             self._paint_artwork(painter, index, artwork_rect)
 
             text_left = artwork_rect.right() + 1 + 2 * ROW_PADDING
@@ -154,6 +158,11 @@ class SongRowDelegate(QStyledItemDelegate):
         artwork_target = QRect(0, 0, artwork.width(), artwork.height())
         artwork_target.moveCenter(rect.center())
         painter.drawPixmap(artwork_target, artwork)
+
+    @staticmethod
+    def song_indent(index: ModelIndex) -> int:
+        """Return how far a song row's artwork and text are shifted right: songs inside a group are indented."""
+        return GROUP_SONG_INDENT if index.parent().isValid() else 0
 
     @staticmethod
     def group_arrow_rect(row_rect: QRect) -> QRect:

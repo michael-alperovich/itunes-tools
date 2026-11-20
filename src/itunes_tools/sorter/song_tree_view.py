@@ -48,8 +48,8 @@ class SongTreeView(QTreeView):
         default_selection_model.deleteLater()
 
         self.setHeaderHidden(True)  # one column, nothing to label
-        # No indentation or branch arrows: rows span the full width, so songs in and out of groups line
-        # up and the selection fills the whole row. Group rows paint their own arrow (SongRowDelegate).
+        # No indentation or branch arrows: rows span the full width, so the selection fills the whole row.
+        # SongRowDelegate paints the group arrows and indents the content of songs inside groups instead.
         self.setIndentation(0)
         self.setRootIsDecorated(False)
         self.row_delegate = SongRowDelegate(self)
