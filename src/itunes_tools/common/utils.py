@@ -1,6 +1,9 @@
 UINT32_MASK = 0xFFFFFFFF
 INT32_SIGN_BIT = 0x80000000
 UINT32_MOD = 0x100000000
+# COM's ``long`` is a signed 32-bit integer.
+INT32_MIN = -0x80000000
+INT32_MAX = 0x7FFFFFFF
 
 
 def to_persistent_id(high: int, low: int) -> str:

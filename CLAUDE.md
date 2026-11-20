@@ -142,7 +142,8 @@ Keep `README.md` as the primary project entry point. Record durable agent-releva
 - Structure the repository to house multiple applications that reuse the common module. Put behavior shared between applications in `itunes_tools.common` rather than duplicating it.
 - Keep iTunes COM access behind `ItunesClient`; applications and UIs should not talk to COM directly.
 - Constraints the applications place on the iTunes library (such as unique playlist names) and custom metadata conventions are documented in the *iTunes library contract* section of `README.md`. Enforce them with a clear error that tells the user what to fix, and update that section when adding one.
-- Keep long-running COM work outside the UI thread.
+- Keep long-running COM work outside the UI thread. An `ItunesClient` is bound to the thread that first uses it (it raises `ItunesClientThreadError` elsewhere), so create a separate client inside each worker thread.
+- `ItunesClient` raises only `ItunesClientError` subclasses (from `exceptions.py`); COM failures are wrapped as `ItunesComError` with the original `com_error` as `__cause__`.
 - Do not rename audio files. iTunes names and files every song itself; when a file does not follow its pattern, warn instead of offering a rename. Ask before proposing any renaming feature.
 
 ### Python conventions and testing

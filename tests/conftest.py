@@ -19,7 +19,7 @@ import win32com.client
 
 
 class FakeComCollection:
-    """Mimics an iTunes COM collection: iterable, with ``Count`` and a 1-based ``Item``."""
+    """Mimics an iTunes COM collection: iterable, ``Count``, 1-based ``Item``, and ``ItemByPersistentID``."""
 
     def __init__(self, items: Iterable[Any]):
         self._items = list(items)
@@ -33,6 +33,13 @@ class FakeComCollection:
 
     def Item(self, index: int) -> Any:
         return self._items[index - 1]  # COM collections are 1-based
+
+    def ItemByPersistentID(self, high: int, low: int) -> Any:
+        """Return the item with these persistent ID halves, or ``None`` like the real collection."""
+        for item in self._items:
+            if item.persistent_ids == (high, low):
+                return item
+        return None
 
 
 class FakeItunesApp:

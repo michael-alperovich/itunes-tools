@@ -32,6 +32,8 @@ None yet.
 |--------------------------|---------|-----------------------------------------------------------|
 | `ITUNES_TOOLS_LOG_LEVEL` | `DEBUG` | Log level for the applications (`INFO`, `WARNING`, ...). |
 
+The log level is case-insensitive. An unknown value falls back to `DEBUG` and logs a warning.
+
 ### Development
 
 Requires Windows, Python 3.14 and [uv](https://docs.astral.sh/uv/). Run the commands below from the

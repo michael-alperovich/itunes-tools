@@ -1,11 +1,26 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from itunes_tools.common.utils import to_persistent_id
+from itunes_tools.common.utils import INT32_MAX, INT32_MIN, to_persistent_id
 
 
 class ItunesPersistentID(BaseModel):
-    high: int = Field(description="The high 32 bits of the unique identifier of the iTunes persistent object.")
-    low: int = Field(description="The low 32 bits of the unique identifier of the iTunes persistent object.")
+    """Persistent ID of an iTunes object, as the signed 32-bit halves COM uses.
+
+    Immutable and hashable, so it can be used as a dict key or in a set.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    high: int = Field(
+        ge=INT32_MIN,
+        le=INT32_MAX,
+        description="The high 32 bits of the unique identifier of the iTunes persistent object.",
+    )
+    low: int = Field(
+        ge=INT32_MIN,
+        le=INT32_MAX,
+        description="The low 32 bits of the unique identifier of the iTunes persistent object.",
+    )
 
     def to_hex(self) -> str:
         """Return the 16-digit uppercase hex form, as used in ``iTunes Library.xml``."""

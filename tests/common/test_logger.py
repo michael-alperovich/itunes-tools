@@ -16,6 +16,16 @@ def logger_name(request: pytest.FixtureRequest):
     logging.getLogger(name).handlers.clear()
 
 
+@pytest.fixture
+def root_console_handler():
+    """Attach a console handler to the root logger, as ``logging.basicConfig`` would, and remove it afterwards."""
+    root = logging.getLogger()
+    handler = logging.StreamHandler()  # created inside the test, so it writes to capsys's stderr
+    root.addHandler(handler)
+    yield handler
+    root.removeHandler(handler)
+
+
 def test_get_logger_returns_named_logger(logger_name):
     assert get_logger(logger_name).name == logger_name
 
@@ -26,10 +36,20 @@ def test_get_logger_defaults_to_debug(logger_name, monkeypatch):
     assert get_logger(logger_name).level == logging.DEBUG
 
 
-def test_get_logger_reads_level_from_environment(logger_name, monkeypatch):
-    monkeypatch.setenv("ITUNES_TOOLS_LOG_LEVEL", "WARNING")
+@pytest.mark.parametrize("value", ["WARNING", "warning", " Warning "])
+def test_get_logger_reads_level_from_environment_case_insensitively(logger_name, monkeypatch, value):
+    monkeypatch.setenv("ITUNES_TOOLS_LOG_LEVEL", value)
 
     assert get_logger(logger_name).level == logging.WARNING
+
+
+def test_get_logger_falls_back_to_debug_and_warns_for_unknown_level(logger_name, monkeypatch, capsys):
+    monkeypatch.setenv("ITUNES_TOOLS_LOG_LEVEL", "verbose")
+
+    logger = get_logger(logger_name)
+
+    assert logger.level == logging.DEBUG
+    assert "Unknown ITUNES_TOOLS_LOG_LEVEL value 'VERBOSE'" in capsys.readouterr().err
 
 
 def test_get_logger_adds_formatted_stream_handler(logger_name):
@@ -53,11 +73,11 @@ def test_get_logger_twice_logs_each_message_once(logger_name, capsys):
     assert capsys.readouterr().err.count("hello") == 1
 
 
-def test_get_logger_adds_handler_even_when_root_has_one(logger_name):
-    root = logging.getLogger()
-    root_handler = logging.NullHandler()
-    root.addHandler(root_handler)
-    try:
-        assert len(get_logger(logger_name).handlers) == 1
-    finally:
-        root.removeHandler(root_handler)
+def test_get_logger_adds_handler_even_when_root_has_one(logger_name, root_console_handler):
+    assert len(get_logger(logger_name).handlers) == 1
+
+
+def test_get_logger_logs_once_when_root_logging_is_configured(logger_name, capsys, root_console_handler):
+    get_logger(logger_name).info("hello")
+
+    assert capsys.readouterr().err.count("hello") == 1

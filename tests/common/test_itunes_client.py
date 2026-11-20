@@ -1,8 +1,18 @@
-import pytest
+import threading
 
-from itunes_tools.common.exceptions import DuplicatePlaylistNameError, PlaylistNotFoundError
+import pytest
+import pywintypes
+
+from itunes_tools.common.exceptions import (
+    DuplicatePlaylistNameError,
+    ItunesClientThreadError,
+    ItunesComError,
+    PlaylistNotFoundError,
+)
 from itunes_tools.common.itunes_client import ItunesClient
 from itunes_tools.common.models import ItunesPersistentID, Song
+
+OPERATION_UNAVAILABLE = pywintypes.com_error(-2147221021, "Operation unavailable", None, None)
 
 
 def test_constructor_does_not_dispatch_com(com_dispatch):
@@ -21,7 +31,7 @@ def test_com_app_is_dispatched_once_on_first_use_and_reused(com_dispatch):
 
 
 def test_custom_prog_id_is_passed_to_dispatch(com_dispatch):
-    ItunesClient("Custom.Application").list_playlists()
+    ItunesClient(prog_id="Custom.Application").list_playlists()
 
     com_dispatch.assert_called_once_with("Custom.Application")
 
@@ -115,3 +125,55 @@ def test_get_playlist_by_id_raises_for_unknown_id(fake_itunes, make_com_playlist
         ItunesClient().get_playlist_by_id(ItunesPersistentID(high=9, low=9))
 
     assert error_info.value.persistent_id == ItunesPersistentID(high=9, low=9)
+
+
+def test_dispatch_com_error_is_raised_as_client_error(com_dispatch):
+    com_dispatch.side_effect = OPERATION_UNAVAILABLE
+
+    with pytest.raises(ItunesComError, match="list playlists") as error_info:
+        ItunesClient().list_playlists()
+
+    assert error_info.value.__cause__ is OPERATION_UNAVAILABLE
+
+
+def test_com_error_during_call_is_raised_as_client_error(fake_itunes, make_com_playlist, make_com_track):
+    fake_itunes.set_playlists(make_com_playlist(1, 2, name="Library", tracks=[make_com_track(3, 4)]))
+
+    def raise_com_error(com_object):
+        raise OPERATION_UNAVAILABLE
+
+    fake_itunes.GetITObjectPersistentIDs = raise_com_error
+
+    with pytest.raises(ItunesComError, match="read a playlist"):
+        ItunesClient().get_playlist_by_id(ItunesPersistentID(high=1, low=2))
+
+
+def list_playlists_in_worker_thread(client: ItunesClient) -> Exception | None:
+    """Call ``client.list_playlists()`` in a new thread and return the exception it raised, if any."""
+    errors: list[Exception] = []
+
+    def worker():
+        try:
+            client.list_playlists()
+        except Exception as error:
+            errors.append(error)
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join()
+    return errors[0] if errors else None
+
+
+def test_client_used_from_another_thread_raises(fake_itunes):
+    client = ItunesClient()
+    client.list_playlists()  # binds the client to this thread
+
+    assert isinstance(list_playlists_in_worker_thread(client), ItunesClientThreadError)
+
+
+def test_client_is_bound_to_the_thread_that_first_uses_it(fake_itunes):
+    client = ItunesClient()  # created here, but first used in the worker
+
+    assert list_playlists_in_worker_thread(client) is None
+    with pytest.raises(ItunesClientThreadError):
+        client.list_playlists()

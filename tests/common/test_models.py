@@ -26,6 +26,34 @@ def test_persistent_ids_compare_by_value():
     assert ItunesPersistentID(high=1, low=2) != ItunesPersistentID(high=2, low=1)
 
 
+def test_persistent_ids_work_as_dict_keys_and_set_members():
+    songs_by_id = {ItunesPersistentID(high=1, low=2): "Song"}
+
+    assert songs_by_id[ItunesPersistentID(high=1, low=2)] == "Song"
+    assert len({ItunesPersistentID(high=1, low=2), ItunesPersistentID(high=1, low=2)}) == 1
+
+
+def test_persistent_id_is_immutable():
+    persistent_id = ItunesPersistentID(high=1, low=2)
+
+    with pytest.raises(ValidationError):
+        persistent_id.high = 3
+
+
+@pytest.mark.parametrize("value", [-2147483648, 2147483647])
+def test_persistent_id_accepts_int32_limits(value):
+    assert ItunesPersistentID(high=value, low=value).high == value
+
+
+@pytest.mark.parametrize("field", ["high", "low"])
+@pytest.mark.parametrize("value", [-2147483649, 2147483648])
+def test_persistent_id_rejects_values_outside_int32(field, value):
+    fields = {"high": 0, "low": 0, field: value}
+
+    with pytest.raises(ValidationError):
+        ItunesPersistentID(**fields)
+
+
 def test_song_accepts_valid_fields():
     song = make_song(name="Æon — Ünïcode", duration=215)
 
