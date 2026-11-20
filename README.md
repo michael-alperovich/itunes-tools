@@ -75,7 +75,33 @@ previous / play-pause / next buttons with a volume slider. A speaker icon marks 
 When a song ends, the next song in the current sorting order plays and the list scrolls to it; songs
 iTunes has no file for are skipped with a message. Each row has two quick play buttons: *Play from the
 beginning* and *Play the last 10 seconds* (which then continues into the next song, to hear the
-transition). *Add group* and *Send to a group* are placeholders for now.
+transition).
+
+**Groups** are temporary containers that help sorting; they exist only in the sorter, never in iTunes.
+A group holds songs (never other groups) and can be collapsed. The playlist order is always the list read
+top to bottom with every group's songs in place, collapsed or not: the player, *Save* and *Commit* follow
+it. **Add group** asks for a name and inserts an empty group above the current row (above the current
+song's group, if it is in one), or at the end when no row is current. **Add season groups** asks for a
+range of years and adds empty groups `Winter 2017`, `Spring 2017`, `Summer 2017`, `Fall 2017`,
+`Winter 2018`, … at the same place; Winter is named after the year holding most of its months (Winter
+2017 is December 2016 – February 2017). Group names are unique; existing season groups are skipped. Each
+song's *Move to a group* button opens a search box over the group names and moves the song to the end of
+the chosen group (all selected songs, when the clicked song is selected). Each group has *Rename* and
+*Delete* buttons; deleting a group leaves its songs at its place, in order. Groups are saved in the
+sorter file as ranges of its (still flat) track list.
+
+**Moving songs and groups.** Click selects a row, Shift+click a range of songs, Ctrl+click adds or
+removes a song; Ctrl+A selects every visible song. Only songs are multi-selected: a group is selected
+by a plain click, on its own. Drag the selection to move it, in playlist order:
+
+- between any two rows: at the top level, or inside a group (into, out of and between groups);
+- onto a group's row: to the end of that group (hovering a collapsed group while dragging opens it);
+- just below an expanded group's header: to the start of that group.
+
+A group moves with its songs and only between top-level rows (below its last song means after a group).
+**Ctrl+X** cuts the selection and **Ctrl+V** moves it above the current row, which is handy for long
+distances: songs go above the current song (inside its group, if any) or above the current group's
+header; a group goes above the current row's top-level item. **Esc** cancels a cut.
 
 **Open** loads a saved sorter file, without iTunes. **Save** writes the songs in their current order
 back to the sorter file the playlist was opened from or last saved to (it asks for a location only if
