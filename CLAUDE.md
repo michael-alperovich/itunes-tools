@@ -132,7 +132,7 @@ Keep `README.md` as the primary project entry point. Record durable agent-releva
   - iTunes metadata verifier
   - iTunes new song importer
   - iTunes to Spotify sync (bidirectional)
-- **Current state:** the shared module `src/itunes_tools/common/` exists, with `ItunesClient` (`itunes_client.py`, a lazy wrapper around the `iTunes.Application` COM object), Pydantic models (`models.py`), logging (`logger.py`), and helpers (`utils.py`). The applications themselves, their Qt UIs, and the test suite remain planned.
+- **Current state:** the shared module `src/itunes_tools/common/` exists, with `ItunesClient` (`itunes_client.py`, a lazy wrapper around the `iTunes.Application` COM object), Pydantic models (`models.py`), client exceptions deriving from `ItunesClientError` (`exceptions.py`), logging (`logger.py`), and helpers (`utils.py`). Unit tests for the common module are under `tests/common/`. The applications themselves and their Qt UIs remain planned.
 - **Stack:** Python 3.14, `uv`, Pydantic, PyQt, and `pywin32` (Windows COM) for communication with iTunes.
 - **Learning context:** this is a personal, single-developer learning project; the goal is to learn the tools and technologies used. Agent-written project code is kept to a minimum: by default the agent advises, explains, and offers snippets and debugging support. Edit project files when the developer explicitly asks, for that task only. Learning mode is the natural fit for most new work, particularly Qt and COM.
 - **Spikes:** `spikes/` is a sandbox where the agent may create, edit, and run experimental scripts without asking. Spike code is throwaway and must not be imported by project code.
@@ -141,6 +141,7 @@ Keep `README.md` as the primary project entry point. Record durable agent-releva
 
 - Structure the repository to house multiple applications that reuse the common module. Put behavior shared between applications in `itunes_tools.common` rather than duplicating it.
 - Keep iTunes COM access behind `ItunesClient`; applications and UIs should not talk to COM directly.
+- Constraints the applications place on the iTunes library (such as unique playlist names) and custom metadata conventions are documented in the *iTunes library contract* section of `README.md`. Enforce them with a clear error that tells the user what to fix, and update that section when adding one.
 - Keep long-running COM work outside the UI thread.
 - Do not rename audio files. iTunes names and files every song itself; when a file does not follow its pattern, warn instead of offering a rename. Ask before proposing any renaming feature.
 
@@ -161,9 +162,15 @@ Verified commands (from repository root, with the variable above set):
 ```text
 uv sync --locked
 uv run python -c "import sys; sys.path.insert(0, 'src'); import itunes_tools.common.itunes_client"
+uv run pytest
+uv run ruff format --check --diff .
+uv run ruff check .
+uv run pre-commit run --all-files
 ```
 
-`uv run pytest` is configured in `pyproject.toml`, but `tests/` does not exist yet, so pytest currently collects from `spikes/` and fails. Record it as verified once the test suite exists.
+Formatting uses Ruff, configured in `pyproject.toml` to match PyCharm's defaults (120-column lines). Ruff lint is limited to PyCharm's "Optimize imports": import sorting (`I`) and unused imports (`F401`). `pre-commit` hooks (`.pre-commit-config.yaml`) check both on every commit without rewriting files; install it once per clone with `uv run pre-commit install`. Keep the hook's `rev` in sync with the `ruff` version in `uv.lock`.
+
+Unit tests mirror `src/` under `tests/`. Shared COM test doubles (`FakeItunesApp`, `FakeComCollection`, track and playlist factories, and the `com_dispatch` mock) live in `tests/conftest.py`.
 
 ### Git and pull requests
 

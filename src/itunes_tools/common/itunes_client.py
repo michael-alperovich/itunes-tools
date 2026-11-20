@@ -2,6 +2,7 @@ import typing
 
 import win32com.client
 
+from itunes_tools.common.exceptions import DuplicatePlaylistNameError, PlaylistNotFoundError
 from itunes_tools.common.logger import get_logger
 from itunes_tools.common.models import ItunesPersistentID, Playlist, Song
 
@@ -31,11 +32,26 @@ class ItunesClient:
         return ItunesPersistentID(high=com_id[0], low=com_id[1])
 
     def list_playlists(self) -> dict[str, ItunesPersistentID]:
-        """Return a mapping of Playlist names and COM IDs."""
-        return {p.Name: self._get_object_id(p) for p in self._itunes_app.LibrarySource.Playlists}
+        """Return a mapping of playlist names to persistent IDs.
+
+        :raises DuplicatePlaylistNameError: if two or more playlists share a name.
+        """
+        playlists: dict[str, ItunesPersistentID] = {}
+        duplicate_names: set[str] = set()
+        for playlist_com in self._itunes_app.LibrarySource.Playlists:
+            if playlist_com.Name in playlists:
+                duplicate_names.add(playlist_com.Name)
+            playlists[playlist_com.Name] = self._get_object_id(playlist_com)
+
+        if duplicate_names:
+            raise DuplicatePlaylistNameError(sorted(duplicate_names))
+        return playlists
 
     def get_playlist_by_id(self, com_id: ItunesPersistentID) -> Playlist:
-        """Return the playlist with the given name."""
+        """Return the playlist with the given persistent ID, including its tracks.
+
+        :raises PlaylistNotFoundError: if no playlist has that ID.
+        """
         try:
             playlist_com = next(
                 filter(lambda p: self._get_object_id(p) == com_id, self._itunes_app.LibrarySource.Playlists)
@@ -43,13 +59,17 @@ class ItunesClient:
             return Playlist(
                 id=com_id,
                 name=playlist_com.Name,
-                tracks=[Song(
-                    id=self._get_object_id(s),
-                    name=s.Name,
-                    artist=s.Artist,
-                    album=s.Album,
-                    duration=s.Duration,
-                ) for s in playlist_com.Tracks],
+                tracks=[
+                    Song(
+                        id=self._get_object_id(s),
+                        name=s.Name,
+                        artist=s.Artist,
+                        album=s.Album,
+                        duration=s.Duration,
+                    )
+                    for s in playlist_com.Tracks
+                ],
             )
         except StopIteration:
-            raise ValueError(f"Playlist with ID {com_id} not found")
+            # "from None" hides the internal StopIteration from the traceback.
+            raise PlaylistNotFoundError(com_id) from None

@@ -1,13 +1,15 @@
 from pydantic import BaseModel, Field
 
+from itunes_tools.common.utils import to_persistent_id
+
 
 class ItunesPersistentID(BaseModel):
     high: int = Field(description="The high 32 bits of the unique identifier of the iTunes persistent object.")
     low: int = Field(description="The low 32 bits of the unique identifier of the iTunes persistent object.")
 
-    def to_hex(self):
-        combined = ((self.high & 0xFFFFFFFF) << 32) | (self.low & 0xFFFFFFFF)
-        return f"{combined:016X}"
+    def to_hex(self) -> str:
+        """Return the 16-digit uppercase hex form, as used in ``iTunes Library.xml``."""
+        return to_persistent_id(self.high, self.low)
 
 
 class Song(BaseModel):
