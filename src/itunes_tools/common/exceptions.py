@@ -54,3 +54,20 @@ class DuplicatePlaylistNameError(ItunesClientError):
         self.duplicate_names = duplicate_names
         names = ", ".join(repr(name) for name in duplicate_names)
         super().__init__(f"Playlist names must be unique. Rename these playlists in iTunes: {names}")
+
+
+class PlaylistNameTakenError(ItunesClientError):
+    """Raised when creating a playlist whose name an existing playlist already uses."""
+
+    def __init__(self, name: str):
+        self.name = name
+        super().__init__(f"A playlist named {name!r} already exists in iTunes. Choose a different name.")
+
+
+class TrackNotFoundError(ItunesClientError):
+    """Raised when songs are no longer in the iTunes library, for example deleted after their metadata was saved."""
+
+    def __init__(self, persistent_ids: list[ItunesPersistentID]):
+        self.persistent_ids = persistent_ids
+        ids = ", ".join(persistent_id.to_hex() for persistent_id in persistent_ids)
+        super().__init__(f"These songs are no longer in the iTunes library: {ids}. Refresh the playlist to drop them.")

@@ -10,7 +10,7 @@ import pytest
 
 from itunes_tools.common.exceptions import PlaylistNotFoundError
 from itunes_tools.common.itunes_client import ItunesClient
-from itunes_tools.common.models import ItunesPersistentID
+from itunes_tools.common.models import ItunesPersistentID, Playlist
 
 pytestmark = pytest.mark.itunes
 
@@ -19,6 +19,16 @@ pytestmark = pytest.mark.itunes
 def live_client() -> ItunesClient:
     """One client per module, so iTunes is dispatched once."""
     return ItunesClient()
+
+
+@pytest.fixture(scope="module")
+def live_playlist(live_client) -> Playlist:
+    """The last listed playlist that has songs; the first playlist is the whole library, which is slow."""
+    for persistent_id in reversed(list(live_client.list_playlists().values())):
+        playlist = live_client.get_playlist_by_id(persistent_id)
+        if playlist.tracks:
+            return playlist
+    pytest.skip("No playlist with songs")
 
 
 def test_listed_playlist_can_be_read_back_by_id(live_client):
@@ -40,3 +50,30 @@ def test_unknown_playlist_id_raises_not_found(live_client):
 
     with pytest.raises(PlaylistNotFoundError):
         live_client.get_playlist_by_id(unknown_id)
+
+
+def test_real_songs_survive_json_dump_and_validation(live_playlist):
+    # Checks that real COM values (local-time pywintypes dates, paths) become plain, round-trippable types.
+    dumped = live_playlist.model_dump(mode="json")
+
+    assert Playlist.model_validate(dumped) == live_playlist
+
+
+def test_file_tracks_have_existing_locations(live_playlist):
+    # Checks that the CastTo to IITFileOrCDTrack works on real tracks.
+    locations = [song.location for song in live_playlist.tracks if song.location is not None]
+
+    assert locations, "Expected at least one song with a file"
+    assert all(location.is_file() for location in locations)
+
+
+def test_export_artwork_writes_an_image(live_client, live_playlist, tmp_path):
+    songs_with_artwork = [song for song in live_playlist.tracks if song.artwork_count > 0]
+    if not songs_with_artwork:
+        pytest.skip("No song with artwork in the playlist")
+
+    exported = live_client.export_artwork(songs_with_artwork[0].id, tmp_path / "cover")
+
+    assert exported is not None
+    assert exported.parent == tmp_path
+    assert exported.stat().st_size > 0

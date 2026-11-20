@@ -132,7 +132,7 @@ Keep `README.md` as the primary project entry point. Record durable agent-releva
   - iTunes metadata verifier
   - iTunes new song importer
   - iTunes to Spotify sync (bidirectional)
-- **Current state:** the shared module `src/itunes_tools/common/` exists, with `ItunesClient` (`itunes_client.py`, a lazy wrapper around the `iTunes.Application` COM object), Pydantic models (`models.py`), client exceptions deriving from `ItunesClientError` (`exceptions.py`), logging (`logger.py`), and helpers (`utils.py`). Unit tests for the common module are under `tests/common/`. The applications themselves and their Qt UIs remain planned.
+- **Current state:** the shared module `src/itunes_tools/common/` exists, with `ItunesClient` (`itunes_client.py`, a lazy wrapper around the `iTunes.Application` COM object: list and read playlists, create a playlist, export artwork), Pydantic models (`models.py`), client exceptions deriving from `ItunesClientError` (`exceptions.py`), file locations (`config.py`), the offline album artwork cache (`artwork_cache.py`), logging (`logger.py`), and helpers (`utils.py`). Unit tests for the common module are under `tests/common/`. The applications themselves and their Qt UIs remain planned.
 - **Stack:** Python 3.14, `uv`, Pydantic, PyQt, and `pywin32` (Windows COM) for communication with iTunes.
 - **Learning context:** this is a personal, single-developer learning project; the goal is to learn the tools and technologies used. Agent-written project code is kept to a minimum: by default the agent advises, explains, and offers snippets and debugging support. Edit project files when the developer explicitly asks, for that task only. Learning mode is the natural fit for most new work, particularly Qt and COM.
 - **Spikes:** `spikes/` is a sandbox where the agent may create, edit, and run experimental scripts without asking. Spike code is throwaway and must not be imported by project code.
@@ -142,6 +142,8 @@ Keep `README.md` as the primary project entry point. Record durable agent-releva
 - Structure the repository to house multiple applications that reuse the common module. Put behavior shared between applications in `itunes_tools.common` rather than duplicating it.
 - Keep iTunes COM access behind `ItunesClient`; applications and UIs should not talk to COM directly.
 - Constraints the applications place on the iTunes library (such as unique playlist names) and custom metadata conventions are documented in the *iTunes library contract* section of `README.md`. Enforce them with a clear error that tells the user what to fix, and update that section when adding one.
+- The sorter works offline: iTunes is used only to capture a playlist's metadata (open, refresh) and to commit the result. `Song`/`Playlist` must keep round-tripping through `model_dump(mode="json")`, which is how sessions are saved; artwork comes from `ArtworkCache.get_path`, which never calls iTunes.
+- With pywin32's generated cache present, COM objects arrive as wrappers of their declared interface (`IITTrack`, `IITPlaylist`) that hide derived members such as `Location` or `AddTrack`. Use `win32com.client.CastTo` (as `ItunesClient` does); tests replace it with the `com_cast_to` fixture.
 - Keep long-running COM work outside the UI thread. An `ItunesClient` is bound to the thread that first uses it (it raises `ItunesClientThreadError` elsewhere), so create a separate client inside each worker thread.
 - `ItunesClient` raises only `ItunesClientError` subclasses (from `exceptions.py`); COM failures are wrapped as `ItunesComError` with the original `com_error` as `__cause__`.
 - Do not rename audio files. iTunes names and files every song itself; when a file does not follow its pattern, warn instead of offering a rename. Ask before proposing any renaming feature.
@@ -171,7 +173,7 @@ uv run pre-commit run --all-files
 
 Formatting uses Ruff, configured in `pyproject.toml` to match PyCharm's defaults (120-column lines). Ruff lint is limited to PyCharm's "Optimize imports": import sorting (`I`) and unused imports (`F401`). `pre-commit` hooks (`.pre-commit-config.yaml`) check both on every commit without rewriting files; install it once per clone with `uv run pre-commit install`. Keep the hook's `rev` in sync with the `ruff` version in `uv.lock`.
 
-Unit tests mirror `src/` under `tests/`. Shared COM test doubles (`FakeItunesApp`, `FakeComCollection`, track and playlist factories, and the `com_dispatch` mock) live in `tests/conftest.py`.
+Unit tests mirror `src/` under `tests/`. Shared COM test doubles (`FakeItunesApp`, `FakeComCollection`, `FakeArtwork` via `make_artwork`, track and playlist factories, and the `com_dispatch` and `com_cast_to` mocks) live in `tests/conftest.py`. Under `--import-mode=importlib` test modules cannot import `conftest`, so share test doubles through fixtures.
 
 ### Git and pull requests
 

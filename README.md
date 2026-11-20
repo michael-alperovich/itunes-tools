@@ -21,6 +21,11 @@ Custom metadata conventions will be documented here as they are introduced.
 - **Unique playlist names.** No two playlists, including folders and smart playlists, may share a
   name. Names are compared exactly, so `Rock` and `rock` are different names.
   Violations raise `DuplicatePlaylistNameError`, which lists the names to rename.
+- **Don't edit a playlist while sorting it.** The sorter reads a playlist's songs and their metadata
+  from iTunes once, when the playlist is opened, and works from that copy (saved in its YAML file)
+  without iTunes. Changes made in iTunes meanwhile are not seen until the playlist is refreshed in
+  the sorter. This rule is not checked; committing a sorted playlist that contains a song since
+  deleted from iTunes fails with `TrackNotFoundError`, listing the songs to drop by refreshing.
 
 **Custom metadata**
 
@@ -33,6 +38,21 @@ None yet.
 | `ITUNES_TOOLS_LOG_LEVEL` | `DEBUG` | Log level for the applications (`INFO`, `WARNING`, ...). |
 
 The log level is case-insensitive. An unknown value falls back to `DEBUG` and logs a warning.
+
+File locations are constants in `src/itunes_tools/common/config.py`:
+
+| Constant             | Value                                 | Purpose                                     |
+|----------------------|---------------------------------------|---------------------------------------------|
+| `ITUNES_FOLDER`      | `D:\OneDrive\Music\iTunes`            | The iTunes library folder                   |
+| `ITUNES_LIBRARY_XML` | `ITUNES_FOLDER\iTunes Music Library.xml` | iTunes' XML export of the library           |
+| `ITUNES_LIBRARY_ITL` | `ITUNES_FOLDER\iTunes Library.itl`    | The iTunes database (never written)         |
+| `APP_FOLDER`         | `ITUNES_FOLDER\itunes-tools`          | Data written by these applications          |
+| `IMAGE_CACHE_FOLDER` | `APP_FOLDER\image-cache`              | Album artwork exported from iTunes          |
+
+The image cache holds one file per song, named after its persistent ID (`<ID>.png`, `.jpg`, ...,
+or `<ID>.none` for a song without artwork). It is filled when a playlist's metadata is read from
+iTunes and refreshed when a song changes in iTunes. It can be deleted at any time; it is rebuilt
+the next time a playlist is opened.
 
 ### Development
 

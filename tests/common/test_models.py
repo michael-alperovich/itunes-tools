@@ -1,3 +1,6 @@
+from datetime import UTC, datetime
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -10,7 +13,16 @@ def make_song(**overrides) -> Song:
         "name": "Song",
         "artist": "Artist",
         "album": "Album",
+        "album_artist": "Album Artist",
+        "genre": "Pop",
+        "year": 2020,
+        "track_number": 1,
+        "disc_number": 1,
         "duration": 180,
+        "date_added": datetime(2022, 3, 7, 12, 39, 30, tzinfo=UTC),
+        "modification_date": datetime(2023, 7, 8, 20, 33, 28, tzinfo=UTC),
+        "location": Path(r"D:\Music\Song.mp3"),
+        "artwork_count": 1,
     }
     fields.update(overrides)
     return Song(**fields)
@@ -78,3 +90,24 @@ def test_playlist_holds_songs_in_order():
     playlist = Playlist(id=ItunesPersistentID(high=3, low=4), name="Mix", tracks=songs)
 
     assert [song.name for song in playlist.tracks] == ["First", "Second"]
+
+
+def test_playlist_survives_json_dump_and_validation_unchanged():
+    # The sorter saves playlists to YAML through a JSON-mode dump and restores them with model_validate.
+    playlist = Playlist(
+        id=ItunesPersistentID(high=3, low=-4),
+        name="Mix",
+        tracks=[make_song(name="Has file"), make_song(name="Missing file", location=None)],
+    )
+
+    dumped = playlist.model_dump(mode="json")
+
+    assert Playlist.model_validate(dumped) == playlist
+
+
+def test_song_json_dump_uses_plain_types():
+    dumped = make_song().model_dump(mode="json")
+
+    assert dumped["id"] == {"high": 1, "low": 2}
+    assert dumped["date_added"] == "2022-03-07T12:39:30Z"
+    assert dumped["location"] == r"D:\Music\Song.mp3"
