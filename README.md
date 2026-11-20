@@ -1,7 +1,7 @@
 ## itunes-tools 
 
 This is a project that provides several applications for managing iTunes library.
-Applications will be implemented using Python and PyQt. WinCom API will be used for communication with iTunes.
+Applications will be implemented using Python and PySide6 (Qt for Python). WinCom API will be used for communication with iTunes.
 Pydantic will b
 
 Applications will include:
@@ -48,11 +48,26 @@ File locations are constants in `src/itunes_tools/common/config.py`:
 | `ITUNES_LIBRARY_ITL` | `ITUNES_FOLDER\iTunes Library.itl`    | The iTunes database (never written)         |
 | `APP_FOLDER`         | `ITUNES_FOLDER\itunes-tools`          | Data written by these applications          |
 | `IMAGE_CACHE_FOLDER` | `APP_FOLDER\image-cache`              | Album artwork exported from iTunes          |
+| `SORTER_FOLDER`      | `APP_FOLDER\sorter`                   | Where the sorter's save dialog opens first  |
 
 The image cache holds one file per song, named after its persistent ID (`<ID>.png`, `.jpg`, ...,
 or `<ID>.none` for a song without artwork). It is filled when a playlist's metadata is read from
 iTunes and refreshed when a song changes in iTunes. It can be deleted at any time; it is rebuilt
 the next time a playlist is opened.
+
+### Playlist sorter
+
+Run it from the repository root (see *Setup* below):
+
+```powershell
+uv run --directory src python -m itunes_tools.sorter
+```
+
+**Import from iTunes** lists the iTunes playlists, reads the chosen one with all its song metadata and
+artwork, and shows its songs. A save dialog then asks where to store the playlist's *sorter file*,
+suggesting `SORTER_FOLDER\<playlist name>.yaml`. The sorter file is a YAML dump of the whole playlist
+(every song's metadata, in sorting order), so a saved session needs no iTunes to reopen. The other
+toolbar buttons, the player and the per-song buttons are placeholders for now.
 
 ### Development
 

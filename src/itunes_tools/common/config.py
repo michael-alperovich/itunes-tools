@@ -19,3 +19,6 @@ APP_FOLDER = ITUNES_FOLDER / "itunes-tools"
 
 IMAGE_CACHE_FOLDER = APP_FOLDER / "image-cache"
 """Album artwork exported from iTunes, so the sorter can show covers without iTunes running."""
+
+SORTER_FOLDER = APP_FOLDER / "sorter"
+"""Where the sorter's save dialog opens first. Users may save sorter files anywhere."""
